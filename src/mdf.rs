@@ -40,6 +40,7 @@ impl MTFBackupIndex {
         let mut hasher = DefaultHasher::new();
         // lets get some of the first pages, these should be some of the system pages, so hopefully unique
         hasher.write(&data[..10 * PAGE_SIZE]);
+        hasher.write_usize(data.len());
         let hash = hasher.finish();
         format!(".mtf_backup_index_{:<016x}", hash)
     }
