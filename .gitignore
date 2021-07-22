@@ -1,4 +1,5 @@
 *.BAK
 .idea
+.mtf_backup_index*
 /target
 **/*.rs.bk

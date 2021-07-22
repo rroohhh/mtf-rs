@@ -1,7 +1,5 @@
 use failure::Error;
 use futures_lite::stream::StreamExt;
-use oxidized_mdf::pages::Record;
-use oxidized_mdf::MdfDatabase;
 use pretty_hex::{config_hex, HexConfig};
 use prettytable::{Cell, Row, Table};
 use std::convert::TryFrom;

@@ -11,7 +11,9 @@ bitflags = "*"
 failure = "*"
 pretty-hex = "*"
 oxidized-mdf = { version = "*", path = "oxidized-mdf" }
-async-std = { version = "*", features = ["attributes"]}
+async-std = { version = "*", features = ["attributes"] }
 futures-lite = "*"
 prettytable-rs = "*"
-mdf = { version = "*", path = "mdf"}
+mdf = { version = "*", path = "mdf" }
+serde = { version = "*", features = ["std", "derive"] }
+bincode = "*"

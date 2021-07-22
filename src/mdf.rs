@@ -1,18 +1,25 @@
 use mdf::{PAGE_SIZE, PageHeader, PagePointer, PageProvider, RawPage};
 use crate::StreamWithData;
+use std::collections::hash_map::DefaultHasher;
+use byteorder::WriteBytesExt;
+use std::hash::Hasher;
+use std::path::Path;
+use serde::{Serialize, Deserialize};
+use bincode;
 
 pub struct MTFPageProvider<'a> {
     data: &'a [u8],
     index: MTFBackupIndex
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct IndexEntry {
     start: u32, // inclusive
     stop: u32, // inclusive
     base: u32,
 }
 
+#[derive(Serialize, Deserialize)]
 struct MTFBackupIndex {
     // First layer is one per file_id
     // that contains outer_level_entries entries per file_id
@@ -29,44 +36,78 @@ impl MTFBackupIndex {
     // Assuming a average run length of O(100), this should work out nicely
     const DIVISOR: usize = 1024;
 
+    fn cache_name(data: &[u8]) -> String {
+        let mut hasher = DefaultHasher::new();
+        // lets get some of the first pages, these should be some of the system pages, so hopefully unique
+        hasher.write(&data[..10 * PAGE_SIZE]);
+        let hash = hasher.finish();
+        format!(".mtf_backup_index_{:<016x}", hash)
+    }
+
+    fn try_load_cache(data: &[u8]) -> Option<Self> {
+        let path = Self::cache_name(data);
+        let path = Path::new(&path);
+        if path.exists() {
+            Some(bincode::deserialize_from(std::fs::File::open(path).unwrap()).unwrap())
+        } else {
+            None
+        }
+    }
+
+    fn write_cache(&self, data: &[u8]) {
+        let path = Self::cache_name(data);
+        let file = std::fs::File::create(path).unwrap();
+        bincode::serialize_into(file, self).unwrap()
+    }
+
     pub fn build(data: &[u8]) -> Self {
-        let num_pages = data.len() / PAGE_SIZE;
-        let outer_level_entries = num_pages / Self::DIVISOR;
-        let divisor = Self::DIVISOR;
-        let mut idx = Vec::new();
+        match Self::try_load_cache(data) {
+            Some(idx) => idx,
+            None => {
+                let num_pages = data.len() / PAGE_SIZE;
+                let outer_level_entries = num_pages / Self::DIVISOR;
+                let divisor = Self::DIVISOR;
+                let mut idx = Vec::new();
 
-        let mut start = PageHeader::parse_ptr(data);
-        let mut old = start;
-        for i in 1..num_pages {
-            let new = PageHeader::parse_ptr(&data[i * PAGE_SIZE..]);
-            // file_id == 0 is invalid and occurs mostly due to uninitialized pages
-            if new.file_id == 0 {
-                continue
-            }
+                let mut start = PageHeader::parse_ptr(data);
+                let mut old = start;
+                for i in 1..num_pages {
+                    let new = PageHeader::parse_ptr(&data[i * PAGE_SIZE..]);
+                    // file_id == 0 is invalid and occurs mostly due to uninitialized pages
+                    if new.file_id == 0 {
+                        continue
+                    }
 
-            if (start.file_id != new.file_id) || (old.page_id + 1) != (new.page_id) {
-                while idx.len() < old.file_id as usize {
-                    idx.push(vec![vec![]; outer_level_entries]);
+                    if (start.file_id != new.file_id) || (old.page_id + 1) != (new.page_id) {
+                        while idx.len() < old.file_id as usize {
+                            idx.push(vec![vec![]; outer_level_entries]);
+                        }
+
+                        // println!("found range: i = {}, start = {:?}, stop = {:?}", i, start, old);
+                        idx[(old.file_id - 1) as usize][start.page_id as usize / divisor].push(IndexEntry {
+                            start: start.page_id,
+                            stop: old.page_id,
+                            base: (i - 1) as u32 + start.page_id - old.page_id
+                        });
+
+                        start = new;
+                    }
+
+                    old = new;
                 }
 
-                // println!("found range: i = {}, start = {:?}, stop = {:?}", i, start, old);
-                idx[(old.file_id - 1) as usize][start.page_id as usize / divisor].push(IndexEntry {
-                    start: start.page_id,
-                    stop: old.page_id,
-                    base: (i - 1) as u32 + start.page_id - old.page_id
-                });
+                let idx = Self {
+                    divisor,
+                    outer_level_entries,
+                    idx,
+                };
 
-                start = new;
+                idx.write_cache(data);
+
+                idx
             }
-
-            old = new;
         }
 
-        Self {
-            divisor,
-            outer_level_entries,
-            idx,
-        }
     }
 
     pub fn lookup(&self, ptr: PagePointer) -> u32 {
