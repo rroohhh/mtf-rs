@@ -10,10 +10,9 @@ byteorder = "*"
 bitflags = "*"
 failure = "*"
 pretty-hex = "*"
-oxidized-mdf = { version = "*", path = "oxidized-mdf" }
-async-std = { version = "*", features = ["attributes"] }
-futures-lite = "*"
-prettytable-rs = "*"
 mdf = { version = "*", path = "mdf" }
 serde = { version = "*", features = ["std", "derive"] }
 bincode = "*"
+derivative = "*"
+env_logger = "*"
+log = "*"

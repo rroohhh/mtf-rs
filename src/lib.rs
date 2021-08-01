@@ -1,9 +1,12 @@
+#![allow(clippy::upper_case_acronyms)]
+#![allow(non_camel_case_types)]
+
 use bitflags::*;
-use failure::*;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use std::io::{Cursor, Read};
+use failure::*;
 use memmap::Mmap;
 use std::fs::File;
+use std::io::{Cursor, Read};
 
 pub mod mdf;
 
@@ -276,7 +279,7 @@ impl DBLKSets {
 pub struct MTFParser {
     file: File,
     sets: DBLKSets,
-    mmap: Option<Mmap>
+    mmap: Option<Mmap>,
 }
 
 #[derive(Debug)]
@@ -286,7 +289,7 @@ pub struct DBLKWithStreams<'a> {
 }
 
 impl<'a> DBLKWithStreams<'a> {
-    fn parse<C: AsRef<[u8]>>(cursor: &mut Cursor<C>, sets: &mut DBLKSets, data: &'a [u8]) -> Option<Self> {
+    fn parse<C: AsRef<[u8]>>(cursor: &mut Cursor<C>, sets: &mut DBLKSets, data: &'a [u8]) -> Self {
         let dblk_position = cursor.position();
         let dblock = DBLK::parse(cursor, sets).unwrap();
         sets.update(dblock.clone());
@@ -296,22 +299,26 @@ impl<'a> DBLKWithStreams<'a> {
 
         let streams = StreamWithData::parse_all(cursor, data);
 
-        Some(Self {
+        Self {
             dblk: dblock,
-            streams
-        })
+            streams,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct StreamWithData<'a> {
     pub stream: Stream,
-    pub data: &'a [u8]
+    pub data: &'a [u8],
 }
 
 impl<'a> StreamWithData<'a> {
     fn parse_all<C: AsRef<[u8]>>(cursor: &mut Cursor<C>, data: &'a [u8]) -> Vec<Self> {
-        Stream::parse_all(cursor).unwrap().into_iter().map(|stream| StreamWithData::from_stream(stream, data)).collect()
+        Stream::parse_all(cursor)
+            .unwrap()
+            .into_iter()
+            .map(|stream| StreamWithData::from_stream(stream, data))
+            .collect()
     }
 
     fn from_stream(stream: Stream, data: &'a [u8]) -> Self {
@@ -333,7 +340,7 @@ impl<'a> DBLKIterator<'a> {
         Self {
             sets,
             mmap,
-            position: 0
+            position: 0,
         }
     }
 }
@@ -354,7 +361,7 @@ impl<'a> Iterator for DBLKIterator<'a> {
         if self.position != cursor.position() {
             self.position = cursor.position();
 
-            dblk
+            Some(dblk)
         } else {
             None
         }
@@ -391,14 +398,13 @@ impl DBLK {
         let base = data.position();
 
         let mut header_data = [0; 52];
-        data.read(&mut header_data)?;
+        data.read_exact(&mut header_data)?;
 
         let mut header_data = Cursor::new(&header_data[..]);
 
         // calculate the checksum
         let mut checksum = 0;
         let mut word = 0;
-        let mut real_checksum = 0;
 
         while let Ok(new_word) = header_data.read_u16::<LittleEndian>() {
             checksum ^= word;
@@ -417,21 +423,21 @@ impl DBLK {
         let osver = header_data.read_u8()?;
         let display_size = header_data.read_u64::<LittleEndian>()?;
         let format_logical_address = header_data.read_u64::<LittleEndian>()?;
-        let reserved_for_mbc = header_data.read_u16::<LittleEndian>()?;
+        let _reserved_for_mbc = header_data.read_u16::<LittleEndian>()?;
 
         let mut reserved1 = [0; 6];
-        header_data.read(&mut reserved1);
+        header_data.read_exact(&mut reserved1)?;
 
         let control_block_id = header_data.read_u32::<LittleEndian>()?;
 
         let mut reserved2 = [0; 4];
-        header_data.read(&mut reserved2);
+        header_data.read_exact(&mut reserved2)?;
 
         let os_specific_data = TapeAddress::parse(header_data.read_u32::<LittleEndian>()?, base)?;
         let string_type = StringType::parse(header_data.read_u8()?)?;
 
         let mut reserved3 = [0; 1];
-        header_data.read(&mut reserved3);
+        header_data.read_exact(&mut reserved3)?;
 
         let header_checksum = header_data.read_u16::<LittleEndian>()?;
 
@@ -491,7 +497,7 @@ impl DBLK {
                 let software_vendor_id = data.read_u16::<LittleEndian>()?;
 
                 let mut media_date = [0; 5];
-                data.read(&mut media_date)?;
+                data.read_exact(&mut media_date)?;
 
                 let media_date = DateTime::parse(media_date);
                 let major_version = data.read_u8()?;
@@ -535,7 +541,7 @@ impl DBLK {
                 let physical_block_address = data.read_u64::<LittleEndian>()?;
 
                 let mut write_date = [0; 5];
-                data.read(&mut write_date)?;
+                data.read_exact(&mut write_date)?;
                 let write_date = DateTime::parse(write_date);
 
                 let software_major_version = data.read_u8()?;
@@ -577,7 +583,7 @@ impl DBLK {
                     .read_str(&header.string_type, data)?;
 
                 let mut write_date = [0; 5];
-                data.read(&mut write_date)?;
+                data.read_exact(&mut write_date)?;
                 let write_date = DateTime::parse(write_date);
 
                 DBLKSpecific::VOLB {
@@ -637,7 +643,7 @@ impl DBLK {
                 let mut entries =
                     vec![0u32; ((soft_filemark_block_size.bytes() - 60) / 4) as usize];
 
-                data.read(&mut entries_data);
+                data.read_exact(&mut entries_data)?;
 
                 LittleEndian::read_u32_into(&entries_data, &mut entries);
 
@@ -832,7 +838,7 @@ impl TapeAddress {
             data.set_position(self.base + (self.offset as u64));
 
             let mut str_data = vec![0; self.size as usize];
-            data.read(&mut str_data);
+            data.read_exact(&mut str_data)?;
 
             data.set_position(old_position);
 
@@ -950,7 +956,7 @@ impl Stream {
     fn parse<T: AsRef<[u8]>>(data: &mut Cursor<T>) -> Result<Option<Stream>> {
         let orig = data.position();
         let mut header_data = [0; 22];
-        data.read(&mut header_data)?;
+        data.read_exact(&mut header_data)?;
 
         let base = data.position();
 
@@ -959,7 +965,6 @@ impl Stream {
         // calculate the checksum
         let mut checksum = 0;
         let mut word = 0;
-        let mut real_checksum = 0;
 
         while let Ok(new_word) = header_data.read_u16::<LittleEndian>() {
             checksum ^= word;
@@ -1066,24 +1071,23 @@ impl Stream {
         Ok(streams)
     }
 
-    fn data<'a>(&self, data: &'a [u8]) -> &'a [u8] {
+    pub fn data<'a>(&self, data: &'a [u8]) -> &'a [u8] {
         let start = self.base as usize;
         let end = (self.base + self.header.length) as usize;
         let end = data.len().min(end);
         &data[start..end]
     }
 
-    fn read<T: AsRef<[u8]>>(&self, data: &mut Cursor<T>) -> Vec<u8> {
+    pub fn read<T: AsRef<[u8]>>(&self, data: &mut Cursor<T>) -> Result<Vec<u8>> {
         let old_position = data.position();
 
         data.set_position(self.base);
 
         let mut stream_data = vec![0u8; self.header.length as usize];
-        data.read(&mut stream_data);
+        data.read_exact(&mut stream_data)?;
 
         data.set_position(old_position);
 
-        stream_data
+        Ok(stream_data)
     }
 }
-

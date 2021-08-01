@@ -3,3 +3,8 @@
 .mtf_backup_index*
 /target
 **/*.rs.bk
+
+*.list
+*.bincode*
+
+unknown_namer.py
