@@ -1,6 +1,6 @@
 # mtf-rs
-Start of a mtf parser in rust.
+Low level parser of `Microsoft Tape Format` files.
 
-Very WIP and stalled, because I don't actually have any MTF files.
+This only provides low level functionality, parsing the various `DBLK`s and `Stream`s and does not aim to provide higher level functionality such as unpacking of common `mtf` files created by backup tools.
 
-If anybody has MTF files they can provide me with, I might pick this up again :)
+Instead this library is meant as a building block for such tools. A basic example for this is the `MTFPageProvider` provided by this crate, which can be used together with [mdf-rs](https://github.com/rroohhh/mdf-rs) to parse Microsoft SQL Server backups directly (without unpacking the `.BAK` file).
